@@ -1,0 +1,41 @@
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'com.github.erizo.gradle:jcstress-gradle-plugin:0.8.3'
+    }
+}
+
+
+plugins {
+    id 'java'
+}
+
+apply plugin: 'jcstress'
+
+ext {
+    jcstressVersion = '0.5'
+}
+
+
+group 'com.github.bsnisar.pool'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    testCompile "org.openjdk.jcstress:jcstress-core:${jcstressVersion}"
+}
+
+jcstress {
+    verbose = true
+    jcstressDependency "org.openjdk.jcstress:jcstress-core:${jcstressVersion}"
+}
