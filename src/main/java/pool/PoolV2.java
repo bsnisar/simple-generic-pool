@@ -2,32 +2,40 @@ package pool;
 
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 
 
 public class PoolV2<R> implements Pool<R> {
 
+    private static final Object TERMINATED = new Object();
 
     /**
      * Entries state.
      */
-    private final Map<R, PooledEntry> refs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<R, PooledEntry> refs = new ConcurrentHashMap<>();
 
     /**
      * acquire -> release handoff
      */
-    private final BlockingQueue<R> handOff = new LinkedBlockingQueue<>();
+    private final TransferQueue<Object> handOff = new LinkedTransferQueue<>();
 
     /**
      * open-close state.
      */
-    private final ReadWriteLock openCloseLock;
+    private final StampedLock openCloseLock;
+
+
+    private final AtomicInteger acquireCount = new AtomicInteger(0);
+
+
+    private final AtomicBoolean terminated = new AtomicBoolean(false);
 
     @SuppressWarnings("WeakerAccess")
     public PoolV2() {
-        openCloseLock = new ReentrantReadWriteLock();
+        openCloseLock = new StampedLock();
     }
 
     enum State {
@@ -45,30 +53,58 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public R acquire() throws InterruptedException {
-        return doAcquire(0, TimeUnit.MILLISECONDS);
+        return doTake(0, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public R acquire(long timeout, TimeUnit timeUnit) throws InterruptedException {
-        return doAcquire(timeout, timeUnit);
+        return doTake(timeout, timeUnit);
+    }
+
+    private R doTake(long timeout, TimeUnit timeUnit) throws InterruptedException {
+
+        // expect that #acquire operation will be visible during #close operation,
+        //  as it increment acquireCount first and check termination flag after.
+        // Vica-versa #close operation CAS  termination first and that "count-down" acquire consumers
+        acquireCount.incrementAndGet();
+
+        try {
+
+            if (isTerminated()) {
+                return null;
+            }
+
+            return doAcquire(timeout, timeUnit);
+        } finally {
+            acquireCount.decrementAndGet();
+        }
     }
 
     private R doAcquire(long timeout, TimeUnit timeUnit) throws InterruptedException {
         long startTime = System.nanoTime();
-        boolean pollForever = timeout <= 0;
+        boolean doPollForever = timeout <= 0;
         timeout = timeUnit.toNanos(timeout);
 
         do {
-            final R item = pollForever
+            final Object elem = doPollForever
                     ? handOff.take()
                     : handOff.poll(timeout, TimeUnit.NANOSECONDS);
 
-            if (item == null) {
+            if (elem == null || elem == TERMINATED) {
                 return null;
             }
 
-            PooledEntry compute = refs.compute(item, (k, entry) -> {
-                if (entry == null) {
+            @SuppressWarnings("unchecked")
+            R item = (R) elem;
+
+            PooledEntry mappedEntry = refs.compute(item, (k, entry) -> {
+                // This lambda is a critical section for every entry.
+                // So decision about offer to acquire the resource or not (because of pool closed state)
+                // have to be taken into account here.
+                //
+                // expects that event if pool was closed (by terminated flag) some resource cane  still be
+                // acquired
+                if (entry == null || isTerminated()) {
                     return null; // mapping have been just removed, try again
                 }
 
@@ -76,19 +112,19 @@ public class PoolV2<R> implements Pool<R> {
                 return entry;
             });
 
-            if (compute != null) {
+            if (mappedEntry != null) {
                 return item;
             }
 
-            if (!pollForever) {
+            if (!doPollForever) {
                 timeout = timeout - elapsedNanos(startTime);
             }
 
-        } while (pollForever || timeout > 0);
-
+        } while (!isTerminated() && (doPollForever || timeout > 0));
 
         return null;
     }
+
 
 
     private long elapsedNanos(long startTime) {
@@ -143,7 +179,9 @@ public class PoolV2<R> implements Pool<R> {
             return null;
         });
 
-        if (await && mapping != null) {
+        //
+        //
+        if (await && mapping != null && !isTerminated()) {
             // await for the latch count down
             // mapping will be removed by release method
             mapping.latch.await();
@@ -157,8 +195,8 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public boolean add(R resource) {
-        final PooledEntry mapping = refs.putIfAbsent(resource, new PooledEntry());
-        if (mapping == null) {
+        final PooledEntry oldMapping = refs.putIfAbsent(resource, new PooledEntry());
+        if (oldMapping == null) {
             handOff.add(resource);
             return true;
         } else {
@@ -170,7 +208,6 @@ public class PoolV2<R> implements Pool<R> {
     public void closeNow() {
 
     }
-
 
     @Override
     public void open() {
@@ -185,7 +222,22 @@ public class PoolV2<R> implements Pool<R> {
     @Override
     public void close() throws InterruptedException {
 
+        if (!terminated.get() && terminated.compareAndSet(false, true)) {
+
+            while (acquireCount.get() > 0) {
+                handOff.tryTransfer(TERMINATED);
+            }
+
+
+
+        }
+
     }
+
+    private boolean isTerminated() {
+        return terminated.get();
+    }
+
 
 }
 
