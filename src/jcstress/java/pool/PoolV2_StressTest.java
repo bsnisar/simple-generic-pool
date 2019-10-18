@@ -150,7 +150,8 @@ public class PoolV2_StressTest {
 
     @JCStressTest
     @Outcome(id = "A1, true", expect = Expect.ACCEPTABLE, desc = "T1 acquire 'A', T2 add 'A', T3 close")
-    @Outcome(id = "null, false", expect = Expect.ACCEPTABLE, desc = "T2 add 'A', T3 close, T1 acquire null")
+    @Outcome(id = "null, false", expect = Expect.ACCEPTABLE, desc = "T3 close, T2 not add 'A' || T1 acquire null")
+    @Outcome(id = "null, true", expect = Expect.ACCEPTABLE, desc = "T2 add 'A', T3 close, T1 acquire null")
     @State
     public static class Close {
         private final PoolV2<String> pool;
@@ -166,8 +167,6 @@ public class PoolV2_StressTest {
                 r.r1 = pool.acquire(15, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
-            } catch (IllegalStateException ex) {
-                r.r1 = null;
             }
         }
 

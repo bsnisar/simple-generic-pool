@@ -46,23 +46,22 @@ public class PoolV2Test {
 
     @SuppressWarnings("Convert2MethodRef")
     @Test(timeout = TIMEOUT)
-    public void release() throws InterruptedException, ExecutionException {
+    public void closeDuringAcq() throws InterruptedException, ExecutionException {
         final PoolV2<String> pool = create();
 
-        ExecutorService es = Executors.newFixedThreadPool(2);
+        ExecutorService es = Executors.newFixedThreadPool(1);
 
         Future<String> f = es.submit(() -> {
             return pool.acquire();
         });
 
         //noinspection StatementWithEmptyBody
-        while (!pool.idleQueue.hasWaitingConsumer()) {}
+        while (!pool._idleQueue.hasWaitingConsumer()) {}
 
         pool.add("A");
-        pool.remove("B");
         pool.closeNow();
 
-        Assert.assertEquals("A", f.get());
+        Assert.assertNull("A", f.get());
 
         es.shutdown();
         es.awaitTermination(10, TimeUnit.SECONDS);
