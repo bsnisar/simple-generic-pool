@@ -46,7 +46,6 @@ public class PoolV2<R> implements Pool<R> {
     };
 
 
-
     /**
      * Entries state.
      */
@@ -57,10 +56,19 @@ public class PoolV2<R> implements Pool<R> {
      */
     private final TransferQueue<PooledEntry<R>> idleQueue = new LinkedTransferQueue<>();
 
+    /**
+     * Pool state.
+     */
     private final AtomicInteger poolState = new AtomicInteger(0);
 
+    /**
+     * Acquire processes.
+     */
     private final AtomicInteger acqWaitCount = new AtomicInteger(0);
 
+    /**
+     * Pool management lock.
+     */
     private final StampedLock openCloseLock = new StampedLock();
 
 
@@ -303,12 +311,12 @@ public class PoolV2<R> implements Pool<R> {
             }
 
             PooledEntry<R> entry = new DefaultPooledEntry<>(resource);
-            boolean newAdd = refs.putIfAbsent(resource, entry) == null;
-            if (newAdd) {
+            boolean added = refs.putIfAbsent(resource, entry) == null;
+            if (added) {
                 idleQueue.offer(entry);
             }
 
-            return newAdd;
+            return added;
         } finally {
             lock.unlock();
         }
@@ -354,7 +362,6 @@ public class PoolV2<R> implements Pool<R> {
                 closeDone = true;
 
                 // clean-up acquire threads
-                //
                 while (acqWaitCount.get() > 0) {
                     //noinspection unchecked
                     idleQueue.offer(TERMINATED);
@@ -373,7 +380,7 @@ public class PoolV2<R> implements Pool<R> {
         // Even though that iterators returned by ConcurrentHashMap.iterator() may or may not reflect insertions
         // or removals that occurred since the iterator was constructed,
         // expects to have any phantom writes at this point as all modifications of the pool
-        // performed under read lock and at that moment poolState flag will be updated.
+        // performed under lock
         if (await) {
             for (PooledEntry<R> value : refs.values()) {
 

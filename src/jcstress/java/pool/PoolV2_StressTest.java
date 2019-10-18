@@ -114,4 +114,75 @@ public class PoolV2_StressTest {
 
     }
 
+    @JCStressTest(Mode.Termination)
+    @Outcome.Outcomes({
+            @Outcome(id = "TERMINATED", expect = Expect.ACCEPTABLE, desc = "finished"),
+            @Outcome(id = "STALE", expect = Expect.FORBIDDEN, desc = "test hung up.")
+    })
+    @State
+    public static class Close_CountDown {
+        private final PoolV2<String> pool;
+
+        public Close_CountDown() {
+            pool = new PoolV2<>();
+            pool.open();
+        }
+
+        @Actor
+        public void actor1()  {
+            try {
+                pool.acquire();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            } catch (IllegalStateException ex) {
+                //ignore
+            }
+        }
+
+        @Signal
+        public void sig() {
+            pool.closeNow();
+        }
+
+    }
+
+
+
+    @JCStressTest
+    @Outcome(id = "A1, true", expect = Expect.ACCEPTABLE, desc = "T1 acquire 'A', T2 add 'A', T3 close")
+    @Outcome(id = "null, false", expect = Expect.ACCEPTABLE, desc = "T2 add 'A', T3 close, T1 acquire null")
+    @State
+    public static class Close {
+        private final PoolV2<String> pool;
+
+        public Close() {
+            pool = new PoolV2<>();
+            pool.open();
+        }
+
+        @Actor
+        public void actor1(LL_Result r) {
+            try {
+                r.r1 = pool.acquire(15, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            } catch (IllegalStateException ex) {
+                r.r1 = null;
+            }
+        }
+
+
+        @Actor
+        public void actor2(LL_Result r) {
+            r.r2 = pool.add(ITEM_1);
+        }
+
+
+        @Actor
+        public void actor3(LL_Result r) {
+            pool.closeNow();
+        }
+
+    }
+
 }

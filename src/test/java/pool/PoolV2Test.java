@@ -43,4 +43,18 @@ public class PoolV2Test {
         Assert.assertTrue(pool.add("B"));
     }
 
+
+    @Test(timeout = TIMEOUT)
+    public void release() throws InterruptedException {
+        final Pool<String> pool = create();
+
+        pool.add("A");
+
+        String acquireStr = pool.acquire();
+
+
+
+
+    }
+
 }
