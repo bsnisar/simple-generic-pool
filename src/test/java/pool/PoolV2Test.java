@@ -5,6 +5,7 @@ import org.junit.Test;
 
 import java.util.concurrent.*;
 
+// test simple logic, not concurrency
 public class PoolV2Test {
 
 
@@ -18,7 +19,7 @@ public class PoolV2Test {
 
 
     @Test(timeout = TIMEOUT)
-    public void acquireWithTO() throws InterruptedException {
+    public void acquireByTimeout() throws InterruptedException {
         final Pool<String> pool = create();
         String s = pool.acquire(100, TimeUnit.MILLISECONDS);
         Assert.assertNull(s);
@@ -26,7 +27,7 @@ public class PoolV2Test {
 
 
     @Test(timeout = TIMEOUT)
-    public void addAndAcquire() throws InterruptedException {
+    public void addAndAcquireByTimeout() throws InterruptedException {
         final Pool<String> pool = create();
         pool.add("A");
         String s = pool.acquire(100, TimeUnit.MILLISECONDS);

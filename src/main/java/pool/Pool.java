@@ -1,12 +1,7 @@
 package pool;
 
 public interface Pool <R> {
-
-    static <R> Pool<R> create() {
-        return new PoolImpl<>();
-    }
-
-
+    
     /**
      * Enable pool.
      * Can be called multiple times.

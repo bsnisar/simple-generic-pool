@@ -19,7 +19,12 @@ public class PoolV2_StressTest {
     @State
     public static class Acquire_WaitForAdd {
 
-        private final PoolV2<String> pool = new PoolV2<>();
+        private final PoolV2<String> pool;
+
+        public Acquire_WaitForAdd() {
+            pool = new PoolV2<>();
+            pool.open();
+        }
 
         @Actor
         public void actor1()  {
@@ -49,6 +54,7 @@ public class PoolV2_StressTest {
 
         public Remove_WaitForRelease() {
             pool = new PoolV2<>();
+            pool.open();
             pool.add(ITEM_1);
 
             try {
@@ -84,6 +90,7 @@ public class PoolV2_StressTest {
 
         public Aq_OnlyOne() {
             pool = new PoolV2<>();
+            pool.open();
             pool.add(ITEM_1);
         }
 
