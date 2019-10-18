@@ -11,7 +11,7 @@ public class PoolV2Test {
 
     private static final int TIMEOUT = 10_000;
 
-    private Pool<String> create() {
+    private PoolV2<String> create() {
         final PoolV2<String> pool = new PoolV2<>();
         pool.open();
         return pool;
@@ -44,17 +44,28 @@ public class PoolV2Test {
     }
 
 
+    @SuppressWarnings("Convert2MethodRef")
     @Test(timeout = TIMEOUT)
-    public void release() throws InterruptedException {
-        final Pool<String> pool = create();
+    public void release() throws InterruptedException, ExecutionException {
+        final PoolV2<String> pool = create();
+
+        ExecutorService es = Executors.newFixedThreadPool(2);
+
+        Future<String> f = es.submit(() -> {
+            return pool.acquire();
+        });
+
+        //noinspection StatementWithEmptyBody
+        while (!pool.idleQueue.hasWaitingConsumer()) {}
 
         pool.add("A");
+        pool.remove("B");
+        pool.closeNow();
 
-        String acquireStr = pool.acquire();
+        Assert.assertEquals("A", f.get());
 
-
-
-
+        es.shutdown();
+        es.awaitTermination(10, TimeUnit.SECONDS);
     }
 
 }

@@ -54,7 +54,8 @@ public class PoolV2<R> implements Pool<R> {
     /**
      * acquire -> release handoff
      */
-    private final TransferQueue<PooledEntry<R>> idleQueue = new LinkedTransferQueue<>();
+    @SuppressWarnings("WeakerAccess")
+    final TransferQueue<PooledEntry<R>> idleQueue = new LinkedTransferQueue<>();
 
     /**
      * Pool state.
@@ -69,7 +70,7 @@ public class PoolV2<R> implements Pool<R> {
     /**
      * Pool management lock.
      */
-    private final StampedLock openCloseLock = new StampedLock();
+    private final ReadWriteLock openCloseLock = new ReentrantReadWriteLock();
 
 
 
@@ -182,7 +183,7 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public void release(R resource) {
-        Lock lock = openCloseLock.asReadLock();
+        Lock lock = openCloseLock.readLock();
         lock.lock();
 
         try {
@@ -193,7 +194,6 @@ public class PoolV2<R> implements Pool<R> {
             }
 
             if (entry.release()) {
-
                 if (isOpen()) {
                     idleQueue.add(entry);
                 }
@@ -223,7 +223,7 @@ public class PoolV2<R> implements Pool<R> {
     private boolean doRemove(R resource, boolean await) throws InterruptedException {
         PooledEntry<R> awaitLatch = null;
 
-        Lock lock = openCloseLock.asReadLock();
+        Lock lock = openCloseLock.readLock();
         lock.lock();
         try {
             PooledEntry<R> entry = refs.get(resource);
@@ -260,6 +260,8 @@ public class PoolV2<R> implements Pool<R> {
         boolean hasTimeout = timeout > 0;
         timeout = timeUnit.toNanos(timeout);
 
+        Lock lock = openCloseLock.readLock();
+
         try {
             // Increment #acqWaitCount and only after it - check state of the pool,
             // during close do opposite, CAS poolState and then verify "count-down"  #acqWaitCount count.
@@ -268,20 +270,28 @@ public class PoolV2<R> implements Pool<R> {
             acqWaitCount.incrementAndGet();
 
             while (isOpen() && isTimeoutValid) {
-
-
                 long startNanos = System.nanoTime();
 
                 PooledEntry<R> elem = hasTimeout
                         ? idleQueue.poll(timeout, TimeUnit.NANOSECONDS)
                         : idleQueue.take();
 
-                if (elem == null || elem == TERMINATED) {
+                if (elem == null) {
                     return null;
                 }
 
-                if (elem.allocate()) {
-                    return elem.value();
+                // Any element can't be acquired after pool was closed
+                if (lock.tryLock()) {
+
+                    try {
+                        if (elem.allocate()) {
+                            return elem.value();
+                        }
+
+                    } finally {
+                        lock.unlock();
+                    }
+
                 }
 
                 if (hasTimeout) {
@@ -302,7 +312,7 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public boolean add(R resource) {
-        Lock lock = openCloseLock.asReadLock();
+        Lock lock = openCloseLock.readLock();
         lock.lock();
 
         try {
@@ -351,7 +361,7 @@ public class PoolV2<R> implements Pool<R> {
     }
 
     private void doClose(boolean await) throws InterruptedException {
-        Lock lock = openCloseLock.asWriteLock();
+        Lock lock = openCloseLock.writeLock();
         lock.lock();
         boolean closeDone = false;
 
@@ -359,12 +369,14 @@ public class PoolV2<R> implements Pool<R> {
             if (poolState.get() == POOL_IS_OPEN
                     && poolState.compareAndSet(POOL_IS_OPEN, POOL_CLOSED)) {
 
+                idleQueue.clear();
+
                 closeDone = true;
 
                 // clean-up acquire threads
                 while (acqWaitCount.get() > 0) {
                     //noinspection unchecked
-                    idleQueue.offer(TERMINATED);
+                    idleQueue.tryTransfer(TERMINATED);
                 }
             }
 
