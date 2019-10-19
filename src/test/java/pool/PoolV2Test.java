@@ -56,7 +56,7 @@ public class PoolV2Test {
         });
 
         //noinspection StatementWithEmptyBody
-        while (!pool._idleQueue.hasWaitingConsumer()) {}
+        while (!pool.idleQueue.hasWaitingConsumer()) {}
 
         pool.add("A");
         pool.closeNow();

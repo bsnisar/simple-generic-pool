@@ -48,28 +48,28 @@ public class PoolV2<R> implements Pool<R> {
     /**
      * Entries state.
      */
-    private final ConcurrentHashMap<R, PooledEntry<R>> _refs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<R, PooledEntry<R>> refs = new ConcurrentHashMap<>();
 
     /**
      * acquire -> release hand-off
      */
     // visible for testing
-    final TransferQueue<PooledEntry<R>> _idleQueue = new LinkedTransferQueue<>();
+    final TransferQueue<PooledEntry<R>> idleQueue = new LinkedTransferQueue<>();
 
     /**
      * Pool state.
      */
-    private final AtomicInteger _poolState = new AtomicInteger(0);
+    private final AtomicInteger poolState = new AtomicInteger(0);
 
     /**
      * Acquire processes.
      */
-    private final AtomicInteger _acqWaitCount = new AtomicInteger(0);
+    private final AtomicInteger acqWaitCount = new AtomicInteger(0);
 
     /**
      * Pool management lock.
      */
-    private final ReadWriteLock _poolStateLock = new ReentrantReadWriteLock();
+    private final ReadWriteLock poolStateLock = new ReentrantReadWriteLock();
 
 
     enum EntryState {
@@ -211,11 +211,11 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public void release(R resource) {
-        Lock lock = _poolStateLock.readLock();
+        Lock lock = poolStateLock.readLock();
         lock.lock();
 
         try {
-            PooledEntry<R> entry = _refs.get(resource);
+            PooledEntry<R> entry = refs.get(resource);
 
             if (entry == null) {
                 return;
@@ -223,11 +223,11 @@ public class PoolV2<R> implements Pool<R> {
 
             if (entry.release()) {
                 if (isOpen()) {
-                    _idleQueue.add(entry);
+                    idleQueue.add(entry);
                 }
 
             } else {
-                _refs.remove(resource);
+                refs.remove(resource);
             }
 
         } finally {
@@ -251,11 +251,11 @@ public class PoolV2<R> implements Pool<R> {
     private boolean doRemove(R resource, boolean await) throws InterruptedException {
         PooledEntry<R> awaitLatch = null;
 
-        Lock rlock = _poolStateLock.readLock();
+        Lock rlock = poolStateLock.readLock();
         rlock.lock();
 
         try {
-            PooledEntry<R> entry = _refs.get(resource);
+            PooledEntry<R> entry = refs.get(resource);
 
             if (entry == null) {
                 return false;
@@ -264,7 +264,7 @@ public class PoolV2<R> implements Pool<R> {
             if (entry.markTombstone()) {
                 awaitLatch = entry;
             } else {
-                _refs.remove(resource);
+                refs.remove(resource);
             }
 
         } finally {
@@ -284,18 +284,18 @@ public class PoolV2<R> implements Pool<R> {
     private R doAcquire(long timeout, TimeUnit timeUnit) throws InterruptedException {
 
         boolean hasTimeout = timeout > 0;
-        Lock rlock = _poolStateLock.readLock();
+        boolean validTimeout = true;
+        timeout = timeUnit.toNanos(timeout);
+        Lock stateLock = poolStateLock.readLock();
 
         try {
-            _acqWaitCount.incrementAndGet();
+            acqWaitCount.incrementAndGet();
 
-            PooledEntry<R> entry = null;
+            PooledEntry<R> entry;
 
-            while (isOpen()) {
-
-                if (entry == null) {
-                    entry = hasTimeout ? _idleQueue.poll(timeout, timeUnit) : _idleQueue.take();
-                }
+            while (isOpen() && validTimeout) {
+                long start = System.nanoTime();
+                entry = hasTimeout ? idleQueue.poll(timeout, TimeUnit.NANOSECONDS) : idleQueue.take();
 
                 if (entry == null || entry == TERMINATED) {
                     return null;
@@ -303,28 +303,30 @@ public class PoolV2<R> implements Pool<R> {
 
                 // guaranty that any element can't be acquired
                 // during pool state changed
-                if (rlock.tryLock()) {
-                    try {
-                        
-                        if (!isOpen()) {
-                            return null;
-                        }
+                stateLock.lock();
+                try {
 
-                        if (entry.allocate()) {
-                            return entry.value();
-                        } else {
-                            entry = null;
-                        }
-
-                    } finally {
-                        rlock.unlock();
+                    if (!isOpen()) {
+                        return null;
                     }
+
+                    if (entry.allocate()) {
+                        return entry.value();
+                    }
+
+                } finally {
+                    stateLock.unlock();
+                }
+
+                if (hasTimeout) {
+                    timeout = timeout - (System.nanoTime() - start);
+                    validTimeout = timeout > 0;
                 }
             }
 
 
         } finally {
-            _acqWaitCount.decrementAndGet();
+            acqWaitCount.decrementAndGet();
         }
 
         return null;
@@ -335,7 +337,7 @@ public class PoolV2<R> implements Pool<R> {
     public boolean add(R resource) {
         Objects.requireNonNull(resource);
 
-        Lock rlock = _poolStateLock.readLock();
+        Lock rlock = poolStateLock.readLock();
         rlock.lock();
 
         try {
@@ -345,9 +347,9 @@ public class PoolV2<R> implements Pool<R> {
             }
 
             PooledEntry<R> entry = new DefaultPooledEntry<>(resource);
-            boolean added = _refs.putIfAbsent(resource, entry) == null;
+            boolean added = refs.putIfAbsent(resource, entry) == null;
             if (added) {
-                _idleQueue.offer(entry);
+                idleQueue.offer(entry);
             }
 
             return added;
@@ -359,14 +361,14 @@ public class PoolV2<R> implements Pool<R> {
 
     @Override
     public void open() {
-        if (_poolState.get() == POOL_IS_FRESH) {
-            _poolState.compareAndSet(POOL_IS_FRESH, POOL_IS_OPEN);
+        if (poolState.get() == POOL_IS_FRESH) {
+            poolState.compareAndSet(POOL_IS_FRESH, POOL_IS_OPEN);
         }
     }
 
     @Override
     public boolean isOpen() {
-        return _poolState.get() == POOL_IS_OPEN;
+        return poolState.get() == POOL_IS_OPEN;
     }
 
     @Override
@@ -385,15 +387,15 @@ public class PoolV2<R> implements Pool<R> {
     }
 
     private void doClose(boolean await) throws InterruptedException {
-        Lock lock = _poolStateLock.writeLock();
+        Lock lock = poolStateLock.writeLock();
         lock.lock();
         boolean closeDone = false;
 
         try {
-            if (_poolState.get() == POOL_IS_OPEN
-                    && _poolState.compareAndSet(POOL_IS_OPEN, POOL_CLOSED)) {
+            if (poolState.get() == POOL_IS_OPEN
+                    && poolState.compareAndSet(POOL_IS_OPEN, POOL_CLOSED)) {
 
-                _idleQueue.clear();
+                idleQueue.clear();
 
                 closeDone = true;
             }
@@ -408,9 +410,9 @@ public class PoolV2<R> implements Pool<R> {
 
 
         // clean-up acquire threads
-        while (_acqWaitCount.get() > 0) {
+        while (acqWaitCount.get() > 0) {
             //noinspection unchecked
-            _idleQueue.tryTransfer(TERMINATED);
+            idleQueue.tryTransfer(TERMINATED);
         }
 
         // Iterate across entries and wait for release if necessary
@@ -419,7 +421,7 @@ public class PoolV2<R> implements Pool<R> {
         // expects to have any phantom writes at this point as all modifications of the pool
         // performed under lock
         if (await) {
-            for (PooledEntry<R> value : _refs.values()) {
+            for (PooledEntry<R> value : refs.values()) {
 
                 if (value.state() == EntryState.IN_USE) {
                     value.awaitRelease();
@@ -427,7 +429,7 @@ public class PoolV2<R> implements Pool<R> {
             }
         }
 
-        _refs.clear();
+        refs.clear();
     }
 
 
