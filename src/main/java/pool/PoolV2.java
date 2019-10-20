@@ -423,7 +423,8 @@ public class PoolV2<R> implements Pool<R> {
         if (await) {
             for (PooledEntry<R> value : refs.values()) {
 
-                if (value.state() == EntryState.IN_USE) {
+                
+                if (value.markTombstone()) {
                     value.awaitRelease();
                 }
             }

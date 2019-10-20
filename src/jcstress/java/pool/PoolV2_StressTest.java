@@ -184,4 +184,40 @@ public class PoolV2_StressTest {
 
     }
 
+
+    @JCStressTest(Mode.Termination)
+    @Outcome.Outcomes({
+            @Outcome(id = "TERMINATED", expect = Expect.ACCEPTABLE, desc = "gracefully close"),
+            @Outcome(id = "STALE", expect = Expect.FORBIDDEN, desc = "close hung up")
+    })
+    @State
+    public static class Close_AwaitRelease {
+        private final PoolV2<String> pool;
+
+        public Close_AwaitRelease() {
+            pool = new PoolV2<>();
+            pool.open();
+            pool.add(ITEM_1);
+
+            try {
+                pool.acquire();
+            } catch (InterruptedException e) {
+                //ignore
+            }
+        }
+
+        @Actor
+        public void actor1() {
+            try {
+                pool.close();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Signal
+        public void sig() {
+            pool.release(ITEM_1);
+        }
+    }
 }
