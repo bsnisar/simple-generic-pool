@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.*;
 
 
-public class PoolV2<R> implements Pool<R> {
+public class PoolImpl<R> implements Pool<R> {
 
     private static final int POOL_IS_FRESH = 0;
     private static final int POOL_IS_OPEN = 1;
@@ -35,12 +35,12 @@ public class PoolV2<R> implements Pool<R> {
         }
 
         @Override
-        EntryState state() {
-            return null;
+        void awaitRelease() {
         }
 
         @Override
-        void awaitRelease() {
+        EntryState state() {
+            return null;
         }
     };
 
@@ -59,7 +59,7 @@ public class PoolV2<R> implements Pool<R> {
     /**
      * Pool state.
      */
-    private final AtomicInteger poolState = new AtomicInteger(0);
+    private final AtomicInteger poolState = new AtomicInteger(POOL_IS_FRESH);
 
     /**
      * Acquire processes.
@@ -116,14 +116,13 @@ public class PoolV2<R> implements Pool<R> {
         abstract void awaitRelease() throws InterruptedException;
     }
 
-    @SuppressWarnings("WeakerAccess")
     static final class DefaultPooledEntry<R>  extends PooledEntry<R> {
         private volatile EntryState state = EntryState.IDLE;
 
         private final CountDownLatch latch = new CountDownLatch(1);
         private final Lock lock = new ReentrantLock();
 
-        public final R value;
+        private final R value;
 
 
         DefaultPooledEntry(R value) {
@@ -131,11 +130,9 @@ public class PoolV2<R> implements Pool<R> {
         }
 
         @Override
-        EntryState state() {
+        public EntryState state() {
             return state;
         }
-
-
 
         @Override
         public R value() {
@@ -165,7 +162,7 @@ public class PoolV2<R> implements Pool<R> {
             try {
                 switch (state) {
                     case IDLE:
-                        return true;
+                        return false;
                     case IN_USE:
                         state = EntryState.IDLE;
                         return true;
@@ -216,17 +213,17 @@ public class PoolV2<R> implements Pool<R> {
 
         try {
             PooledEntry<R> entry = refs.get(resource);
-
             if (entry == null) {
                 return;
             }
 
             if (entry.release()) {
+
                 if (isOpen()) {
                     idleQueue.add(entry);
                 }
 
-            } else {
+            } else if (entry.state() == EntryState.TOMBSTONE) {
                 refs.remove(resource);
             }
 
@@ -251,8 +248,8 @@ public class PoolV2<R> implements Pool<R> {
     private boolean doRemove(R resource, boolean await) throws InterruptedException {
         PooledEntry<R> awaitLatch = null;
 
-        Lock rlock = poolStateLock.readLock();
-        rlock.lock();
+        Lock stateLock = poolStateLock.readLock();
+        stateLock.lock();
 
         try {
             PooledEntry<R> entry = refs.get(resource);
@@ -268,10 +265,8 @@ public class PoolV2<R> implements Pool<R> {
             }
 
         } finally {
-            rlock.unlock();
+            stateLock.unlock();
         }
-
-
 
         if (awaitLatch != null && await) {
             awaitLatch.awaitRelease();
@@ -337,8 +332,8 @@ public class PoolV2<R> implements Pool<R> {
     public boolean add(R resource) {
         Objects.requireNonNull(resource);
 
-        Lock rlock = poolStateLock.readLock();
-        rlock.lock();
+        Lock stateLock = poolStateLock.readLock();
+        stateLock.lock();
 
         try {
 
@@ -354,16 +349,14 @@ public class PoolV2<R> implements Pool<R> {
 
             return added;
         } finally {
-            rlock.unlock();
+            stateLock.unlock();
         }
     }
 
 
     @Override
     public void open() {
-        if (poolState.get() == POOL_IS_FRESH) {
-            poolState.compareAndSet(POOL_IS_FRESH, POOL_IS_OPEN);
-        }
+        poolState.compareAndSet(POOL_IS_FRESH, POOL_IS_OPEN);
     }
 
     @Override
@@ -392,11 +385,8 @@ public class PoolV2<R> implements Pool<R> {
         boolean closeDone = false;
 
         try {
-            if (poolState.get() == POOL_IS_OPEN
-                    && poolState.compareAndSet(POOL_IS_OPEN, POOL_CLOSED)) {
-
+            if (poolState.get() == POOL_IS_OPEN && poolState.compareAndSet(POOL_IS_OPEN, POOL_CLOSED)) {
                 idleQueue.clear();
-
                 closeDone = true;
             }
 

@@ -1,23 +1,20 @@
 package pool;
 
 import org.openjdk.jcstress.annotations.*;
-import org.openjdk.jcstress.infra.results.LL_Result;
 import org.openjdk.jcstress.infra.results.ZZL_Result;
-import org.openjdk.jcstress.infra.results.ZZ_Result;
-
-import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
 
 public class PoolV2_Entry_StressTest {
 
     @JCStressTest()
+    @Outcome(id = "true, false, IDLE", expect = Expect.ACCEPTABLE, desc = "acq, release")
     @Outcome(id = "true, true, IDLE", expect = Expect.ACCEPTABLE, desc = "acq, release")
     @Outcome(id = "true, true, IN_USE", expect = Expect.ACCEPTABLE, desc = "release, acq")
     @State
     public static class AllocateAndRelease {
 
-        final PoolV2.PooledEntry<String> e =  new PoolV2.DefaultPooledEntry<>("");
+        final PoolImpl.DefaultPooledEntry<String> e =  new PoolImpl.DefaultPooledEntry<>("");
 
 
         @Actor
@@ -41,10 +38,10 @@ public class PoolV2_Entry_StressTest {
     @State
     public static class ReleaseMark {
 
-        final PoolV2.PooledEntry<String> e;
+        final PoolImpl.DefaultPooledEntry<String> e;
 
         public ReleaseMark() {
-            e = new PoolV2.DefaultPooledEntry<>("");
+            e = new PoolImpl.DefaultPooledEntry<>("");
             e.allocate();
         }
 

@@ -15,7 +15,7 @@ public interface Pool <R> {
     boolean isOpen();
 
     /**
-     * Disable pool. Can be called multiple times.
+     * Close pool. Can be called multiple times. Wait till all acquired items were released.
      */
     void close() throws InterruptedException;
 
@@ -23,9 +23,7 @@ public interface Pool <R> {
      * Get resource from pool.
      * Wait till any resource become available.
      *
-     * @return acquired value
-     * @throws IllegalStateException in case the pool is closed. Waited threads will be released
-     * and null will be returned.
+     * @return acquired value or {@code null} if pool was closed.
      */
     R acquire() throws InterruptedException;
 
@@ -36,9 +34,7 @@ public interface Pool <R> {
      *
      * @param timeout timeout for successful acquire
      * @param timeUnit time unit
-     * @return acquired value or {@code null} if timeout exceeded
-     * @throws IllegalStateException in case the pool is closed. Waited threads will be released
-     * and null will be returned.
+     * @return acquired value or {@code null} if pool was closed or timeout exceeded.
      */
     R acquire(long timeout,
               java.util.concurrent.TimeUnit timeUnit) throws InterruptedException;

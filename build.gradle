@@ -12,6 +12,7 @@ buildscript {
 
 plugins {
     id 'java'
+    id "me.champeau.gradle.jmh" version "0.4.8"
 }
 
 apply plugin: 'jcstress'
@@ -25,6 +26,7 @@ group 'com.github.bsnisar.pool'
 version '1.0-SNAPSHOT'
 
 sourceCompatibility = 1.8
+targetCompatibility = 1.8
 
 repositories {
     jcenter()

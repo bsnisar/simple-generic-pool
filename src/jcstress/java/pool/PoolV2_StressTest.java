@@ -19,10 +19,10 @@ public class PoolV2_StressTest {
     @State
     public static class Acquire_WaitForAdd {
 
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Acquire_WaitForAdd() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
         }
 
@@ -50,10 +50,10 @@ public class PoolV2_StressTest {
     @State
     public static class Remove_WaitForRelease {
 
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Remove_WaitForRelease() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
             pool.add(ITEM_1);
 
@@ -86,10 +86,10 @@ public class PoolV2_StressTest {
     @Outcome(id = "A1, null", expect = Expect.ACCEPTABLE, desc = "T2 acquired X, and T1 not")
     @State
     public static class Aq_OnlyOne {
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Aq_OnlyOne() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
             pool.add(ITEM_1);
         }
@@ -121,10 +121,10 @@ public class PoolV2_StressTest {
     })
     @State
     public static class Close_CountDown {
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Close_CountDown() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
         }
 
@@ -154,10 +154,10 @@ public class PoolV2_StressTest {
     @Outcome(id = "null, true", expect = Expect.ACCEPTABLE, desc = "T2 add 'A', T3 close, T1 acquire null")
     @State
     public static class Close {
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Close() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
         }
 
@@ -192,10 +192,10 @@ public class PoolV2_StressTest {
     })
     @State
     public static class Close_AwaitRelease {
-        private final PoolV2<String> pool;
+        private final PoolImpl<String> pool;
 
         public Close_AwaitRelease() {
-            pool = new PoolV2<>();
+            pool = new PoolImpl<>();
             pool.open();
             pool.add(ITEM_1);
 

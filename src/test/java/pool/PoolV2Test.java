@@ -11,8 +11,8 @@ public class PoolV2Test {
 
     private static final int TIMEOUT = 10_000;
 
-    private PoolV2<String> create() {
-        final PoolV2<String> pool = new PoolV2<>();
+    private PoolImpl<String> create() {
+        final PoolImpl<String> pool = new PoolImpl<>();
         pool.open();
         return pool;
     }
@@ -39,7 +39,6 @@ public class PoolV2Test {
         final Pool<String> pool = create();
         Assert.assertTrue(pool.add("A"));
         Assert.assertFalse(pool.add("A"));
-
         Assert.assertTrue(pool.add("B"));
     }
 
@@ -47,7 +46,7 @@ public class PoolV2Test {
     @SuppressWarnings("Convert2MethodRef")
     @Test(timeout = TIMEOUT)
     public void closeDuringAcq() throws InterruptedException, ExecutionException {
-        final PoolV2<String> pool = create();
+        final PoolImpl<String> pool = create();
 
         ExecutorService es = Executors.newFixedThreadPool(1);
 
@@ -58,10 +57,9 @@ public class PoolV2Test {
         //noinspection StatementWithEmptyBody
         while (!pool.idleQueue.hasWaitingConsumer()) {}
 
-        pool.add("A");
         pool.closeNow();
 
-        Assert.assertNull("A", f.get());
+        Assert.assertNull(f.get());
 
         es.shutdown();
         es.awaitTermination(10, TimeUnit.SECONDS);
