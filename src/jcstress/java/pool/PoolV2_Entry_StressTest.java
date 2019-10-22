@@ -8,7 +8,7 @@ import static java.util.Objects.requireNonNull;
 public class PoolV2_Entry_StressTest {
 
     @JCStressTest()
-    @Outcome(id = "true, false, IDLE", expect = Expect.ACCEPTABLE, desc = "acq, release")
+    @Outcome(id = "true, false, IN_USE", expect = Expect.ACCEPTABLE, desc = "acq, release")
     @Outcome(id = "true, true, IDLE", expect = Expect.ACCEPTABLE, desc = "acq, release")
     @Outcome(id = "true, true, IN_USE", expect = Expect.ACCEPTABLE, desc = "release, acq")
     @State
